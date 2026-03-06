@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
+import cv2  # Required for compute_contours
+import numpy as np  # Required for compute_contours
+
 # +
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import cv2 # Required for compute_contours
-import numpy as np # Required for compute_contours
 # -
-
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
@@ -2072,24 +2072,19 @@ class RealNVP(nn.Module):
         return self.prior.log_prob(z) + log_det
 
 
-
-
-
-
-
 # --- Your ChannelAttention Class (with init fix) ---
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, ratio=16):
-        super(ChannelAttention, self).__init__()
+        super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.mlp = nn.Sequential(
             nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False),
         )
         self.sigmoid = nn.Sigmoid()
-        
+
         # === INITIALIZATION FIX ===
         # Initialize the last conv layer's weights to zero
         torch.nn.init.constant_(self.mlp[2].weight, 0)
@@ -2098,32 +2093,34 @@ class ChannelAttention(nn.Module):
     def forward(self, x):
         avg_out = self.mlp(self.avg_pool(x))
         max_out = self.mlp(self.max_pool(x))
-        return self.sigmoid(avg_out + max_out) # Initializes to 0.5
+        return self.sigmoid(avg_out + max_out)  # Initializes to 0.5
+
 
 # --- YOUR ORIGINAL SpatialAttention Class (with init fix) ---
 class SpatialAttention(nn.Module):
+    """THIS IS YOUR ORIGINAL MODULE. It uses your CV logic, and we are just adding the stable initialization fix.
     """
-    THIS IS YOUR ORIGINAL MODULE.
-    It uses your CV logic, and we are just adding the
-    stable initialization fix.
-    """
+
     def __init__(self, kernel_sizes=(1, 3, 5)):
-        super(SpatialAttention, self).__init__()
-        
+        super().__init__()
+
         # This is YOUR original branch logic
-        self.branches = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(1, 1, k, padding=k//2, bias=False), # 1 input channel
-                nn.BatchNorm2d(1)
-            ) for k in kernel_sizes
-        ])
-        
+        self.branches = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(1, 1, k, padding=k // 2, bias=False),  # 1 input channel
+                    nn.BatchNorm2d(1),
+                )
+                for k in kernel_sizes
+            ]
+        )
+
         # === STABLE INITIALIZATION FIX ===
         # We will make the branches output a large negative number,
         # so the 'mask' initializes to 0.
         for branch in self.branches:
-            torch.nn.init.constant_(branch[0].weight, 0) # Conv weight = 0
-            torch.nn.init.constant_(branch[1].bias, 0.0) # BN bias = -10
+            torch.nn.init.constant_(branch[0].weight, 0)  # Conv weight = 0
+            torch.nn.init.constant_(branch[1].bias, 0.0)  # BN bias = -10
         # =================================
 
         self.sigmoid = nn.Sigmoid()
@@ -2131,25 +2128,24 @@ class SpatialAttention(nn.Module):
     def forward(self, x):
         # 1. Generate hint mask (YOUR ORIGINAL CV LOGIC)
         # This is 100% correct for your thesis.
-        contour_mask = self.compute_contours(x) 
-        contour_mask = contour_mask.unsqueeze(1) # [B, 1, H, W]
+        contour_mask = self.compute_contours(x)
+        contour_mask = contour_mask.unsqueeze(1)  # [B, 1, H, W]
 
         # 2. Refine the hint (YOUR ORIGINAL LOGIC)
         # At init, this will sum up to ~-30.0
         att = sum(branch(contour_mask) for branch in self.branches)
-        
+
         # At init, this will be sigmoid(-30) = 0
-        mask = self.sigmoid(att) 
+        mask = self.sigmoid(att)
 
         # 3. Apply spatial attention (YOUR ORIGINAL LOGIC)
         # At init, this will be (x * 0) + x = x
-        attended_x = x * mask + x 
+        attended_x = x * mask + x
         return attended_x
 
     def compute_contours(self, x):
-        """
-        A SMARTER, contour-based hint generator using Canny and findContours.
-        This is still 100% traditional CV and respects my thesis goal.
+        """A SMARTER, contour-based hint generator using Canny and findContours. This is still 100% traditional CV and
+        respects my thesis goal.
         """
         # Detach from graph and move to CPU for OpenCV operations
         x_np = x.detach().cpu().numpy()
@@ -2178,7 +2174,7 @@ class SpatialAttention(nn.Module):
             lower = int(max(0, (1.0 - sigma) * v))
             upper = int(min(255, (1.0 + sigma) * v))
             canny_edges = cv2.Canny(blurred, lower, upper)
-            
+
             # Find contours in the edge map
             contours, _ = cv2.findContours(canny_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -2187,38 +2183,38 @@ class SpatialAttention(nn.Module):
             final_mask = np.zeros_like(gray_uint8)
             cv2.drawContours(final_mask, contours, -1, (255), thickness=cv2.FILLED)
             # --- END NEW LOGIC ---
-            
+
             # # ===>>> ADD THESE TWO LINES <<<=== to improve cup mAP50
             # # Apply Morphological Closing to fill small holes/gaps within contours
             # kernel = np.ones((5,5), np.uint8) # 5x5 kernel might be better for closing
             # final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel)
             # # ===>>> END OF ADDITION <<<===
-            
 
             masks_list.append(final_mask)
-        
+
         # Convert back to tensor
         mask_tensor = torch.tensor(np.stack(masks_list), dtype=x.dtype).to(x.device)
-        
+
         return mask_tensor
+
 
 # --- Your CBAM Class (with STABLE forward pass) ---
 class CBAM(nn.Module):
-    def __init__(self, c1, c2, ratio=16): 
-        super(CBAM, self).__init__()
+    def __init__(self, c1, c2, ratio=16):
+        super().__init__()
         self.channel_attention = ChannelAttention(c1, ratio)
         self.spatial_attention = SpatialAttention()
 
     def forward(self, x):
         # === STABLE ADDITIVE FORWARD PASS ===
-        
+
         # 1. Apply Channel Attention as an ADDITIVE residual
         # At init, this will be x + (x * 0.5) = 1.5 * x
         # This is STABLE and will not vanish.
         x_ca = x + (x * self.channel_attention(x))
-        
+
         # 2. Apply Spatial Attention
         # At init, this will be an identity function (output = input)
-        x_sa = self.spatial_attention(x_ca) 
-        
+        x_sa = self.spatial_attention(x_ca)
+
         return x_sa
