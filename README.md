@@ -115,6 +115,82 @@ Discover more examples in the YOLO [Python Docs](https://docs.ultralytics.com/us
 
 </details>
 
+## Glaucoma Detection Dataset
+
+This repository includes the `GlaucomaYOLO_resized/` dataset for optic disc and optic cup detection, used with the custom contour-based CBAM attention models.
+
+### Dataset Structure
+
+```
+GlaucomaYOLO_resized/
+├── glaucoma.yaml          # Dataset configuration file
+├── images/
+│   ├── train/             # 998 training images
+│   ├── val/               # 109 validation images
+│   └── test/              # 227 test images
+└── labels/
+    ├── train/             # YOLO-format labels (class x_center y_center width height)
+    ├── val/
+    └── test/
+```
+
+**Classes (2):**
+
+| ID | Class       |
+|----|-------------|
+| 0  | optic_disc  |
+| 1  | optic_cup   |
+
+### Training with CBAM Attention Models
+
+Train a YOLO11-CBAM model on the Glaucoma dataset using the CLI:
+
+```bash
+yolo train model=yolo11n-cbam.yaml data=GlaucomaYOLO_resized/glaucoma.yaml epochs=100 imgsz=640
+```
+
+Or via Python:
+
+```python
+from ultralytics import YOLO
+
+model = YOLO("yolo11n-cbam.yaml")
+model.train(data="GlaucomaYOLO_resized/glaucoma.yaml", epochs=100, imgsz=640)
+```
+
+Three CBAM model configs are available under `ultralytics/cfg/models/11/`:
+
+| Config               | Scale | Depth | Width | Max Channels |
+|----------------------|-------|-------|-------|--------------|
+| `yolo11n-cbam.yaml`  | nano  | 0.50  | 0.25  | 1024         |
+| `yolo11s-cbam.yaml`  | small | 0.50  | 0.50  | 1024         |
+| `yolo11m-cbam.yaml`  | medium| 0.50  | 1.00  | 512          |
+
+### Default Training Settings
+
+The key default hyperparameters (from `ultralytics/cfg/default.yaml`) are:
+
+| Setting          | Default  | Description                                      |
+|------------------|----------|--------------------------------------------------|
+| `epochs`         | 100      | Number of training epochs                        |
+| `patience`       | 100      | Early stopping patience (epochs without improvement) |
+| `batch`          | 16       | Batch size (-1 for AutoBatch)                    |
+| `imgsz`          | 640      | Training image size                              |
+| `optimizer`      | auto     | Optimizer (SGD, Adam, AdamW, etc.)               |
+| `lr0`            | 0.01     | Initial learning rate                            |
+| `lrf`            | 0.01     | Final LR fraction (final LR = lr0 * lrf)        |
+| `momentum`       | 0.937    | SGD momentum / Adam beta1                        |
+| `weight_decay`   | 0.0005   | L2 regularization                                |
+| `warmup_epochs`  | 3.0      | Warmup epochs                                    |
+| `box`            | 7.5      | Box loss gain                                    |
+| `cls`            | 0.5      | Classification loss gain                         |
+| `dfl`            | 1.5      | Distribution focal loss gain                     |
+| `mosaic`         | 1.0      | Mosaic augmentation probability                  |
+| `close_mosaic`   | 10       | Disable mosaic for final N epochs                |
+| `amp`            | True     | Automatic Mixed Precision                        |
+
+Override any setting via CLI args (e.g., `batch=8 lr0=0.001`) or Python kwargs.
+
 ## ✨ Models
 
 Ultralytics supports a wide range of YOLO models, from early versions like [YOLOv3](https://docs.ultralytics.com/models/yolov3/) to the latest [YOLO26](https://docs.ultralytics.com/models/yolo26/). The tables below showcase YOLO26 models pretrained on the [COCO](https://docs.ultralytics.com/datasets/detect/coco/) dataset for [Detection](https://docs.ultralytics.com/tasks/detect/), [Segmentation](https://docs.ultralytics.com/tasks/segment/), and [Pose Estimation](https://docs.ultralytics.com/tasks/pose/). Additionally, [Classification](https://docs.ultralytics.com/tasks/classify/) models pretrained on the [ImageNet](https://docs.ultralytics.com/datasets/classify/imagenet/) dataset are available. [Tracking](https://docs.ultralytics.com/modes/track/) mode is compatible with all Detection, Segmentation, and Pose models. All [Models](https://docs.ultralytics.com/models/) are automatically downloaded from the latest Ultralytics [release](https://github.com/ultralytics/assets/releases) upon first use.

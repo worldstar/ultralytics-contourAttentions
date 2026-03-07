@@ -1,0 +1,13 @@
+# Glaucoma detection dataset
+# Example usage: yolo train data=GlaucomaYOLO_resized/glaucoma.yaml model=yolo11n-cbam.yaml
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: GlaucomaYOLO_resized # dataset root dir
+train: images/train # train images (998 images)
+val: images/val # val images (109 images)
+test: images/test # test images (227 images)
+
+# Classes
+names:
+  0: optic_disc
+  1: optic_cup
