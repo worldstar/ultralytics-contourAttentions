@@ -191,6 +191,92 @@ The key default hyperparameters (from `ultralytics/cfg/default.yaml`) are:
 
 Override any setting via CLI args (e.g., `batch=8 lr0=0.001`) or Python kwargs.
 
+## NCHC H100 Deployment (40 Experiments)
+
+This section describes how to run the full set of 40 experiments (8 attention configs x 5 seeds) on the NCHC (National Center for High-performance Computing) Taiwan Computing Cloud using Slurm and Singularity.
+
+### Experiment Configurations
+
+| Config | Model YAML | Attention Module | Params |
+|--------|-----------|------------------|--------|
+| baseline | `yolov9c.yaml` | None | 25,590,912 |
+| contourcbam | `yolov9c-contourcbam.yaml` | ContourCBAM (proposed) | 25,664,763 |
+| stdcbam | `yolov9c-stdcbam.yaml` | Standard CBAM (Woo et al. 2018) | 25,664,934 |
+| se | `yolov9c-se.yaml` | SE (Hu et al. 2018) | 25,664,640 |
+| eca | `yolov9c-eca.yaml` | ECA (Wang et al. 2020) | 25,590,927 |
+| simam | `yolov9c-simam.yaml` | SimAM (Yang et al. 2021) | 25,590,912 |
+| coordatt | `yolov9c-coordatt.yaml` | Coordinate Attention (Hou et al. 2021) | 25,646,288 |
+| gam | `yolov9c-gam.yaml` | GAM (Liu et al. 2021) | 40,339,712 |
+
+Each config is trained with 5 seeds (0-4), totaling **40 experiments**.
+
+Training hyperparameters: `batch=32, epochs=100, optimizer=SGD, close_mosaic=15, imgsz=640`.
+
+### Slurm Job Array Mapping
+
+The `nchc_experiments.slurm` file uses `--array=0-39` where each task ID maps to:
+
+| Task IDs | Config | Seeds |
+|----------|--------|-------|
+| 0-4 | baseline | 0-4 |
+| 5-9 | contourcbam | 0-4 |
+| 10-14 | stdcbam | 0-4 |
+| 15-19 | se | 0-4 |
+| 20-24 | eca | 0-4 |
+| 25-29 | simam | 0-4 |
+| 30-34 | coordatt | 0-4 |
+| 35-39 | gam | 0-4 |
+
+### Deployment Steps
+
+1. **Upload the repository** to `$HOME/ultralytics-contourAttentions` on NCHC.
+
+2. **Edit the Slurm account**: Open `nchc_experiments.slurm` and replace `MSTXXXXX` on line 7 with your actual NCHC account code.
+
+3. **Run the setup check**:
+   ```bash
+   cd $HOME/ultralytics-contourAttentions
+   bash nchc_setup.sh
+   ```
+   This verifies the dataset, all 8 YAML configs, and the Singularity container are in place.
+
+4. **Submit all 40 experiments**:
+   ```bash
+   sbatch nchc_experiments.slurm
+   ```
+   To submit only a subset (e.g., baseline seeds 0-4):
+   ```bash
+   sbatch --array=0-4 nchc_experiments.slurm
+   ```
+   To rerun a single failed job (e.g., task ID 17):
+   ```bash
+   sbatch --array=17 nchc_experiments.slurm
+   ```
+
+5. **Monitor job status**:
+   ```bash
+   squeue -u $USER
+   ```
+   Check a specific job's output:
+   ```bash
+   cat logs/exp_<JOB_ID>_<TASK_ID>.out
+   ```
+
+6. **Collect results** after all jobs complete:
+   ```bash
+   python nchc_collect_results.py
+   ```
+   This generates `experiment_results/all_results.json`, `experiment_results/summary.json`, and prints mean +/- std tables with paired t-tests (baseline vs. each attention module).
+
+### Key Files
+
+| File | Description |
+|------|-------------|
+| `nchc_experiments.slurm` | Slurm job array script (40 jobs, H100 GPU, Singularity container) |
+| `nchc_setup.sh` | Pre-flight setup check (dataset, configs, container) |
+| `nchc_collect_results.py` | Post-experiment result aggregation and statistical summary |
+| `run_all_experiments.py` | Alternative local experiment runner with auto-resume |
+
 ## ✨ Models
 
 Ultralytics supports a wide range of YOLO models, from early versions like [YOLOv3](https://docs.ultralytics.com/models/yolov3/) to the latest [YOLO26](https://docs.ultralytics.com/models/yolo26/). The tables below showcase YOLO26 models pretrained on the [COCO](https://docs.ultralytics.com/datasets/detect/coco/) dataset for [Detection](https://docs.ultralytics.com/tasks/detect/), [Segmentation](https://docs.ultralytics.com/tasks/segment/), and [Pose Estimation](https://docs.ultralytics.com/tasks/pose/). Additionally, [Classification](https://docs.ultralytics.com/tasks/classify/) models pretrained on the [ImageNet](https://docs.ultralytics.com/datasets/classify/imagenet/) dataset are available. [Tracking](https://docs.ultralytics.com/modes/track/) mode is compatible with all Detection, Segmentation, and Pose models. All [Models](https://docs.ultralytics.com/models/) are automatically downloaded from the latest Ultralytics [release](https://github.com/ultralytics/assets/releases) upon first use.

@@ -46,6 +46,9 @@ __all__ = (
     "CBFuse",
     "CBLinear",
     "ContrastiveHead",
+    "CoordAttention",
+    "ECAAttention",
+    "GAMAttention",
     "GhostBottleneck",
     "HGBlock",
     "HGStem",
@@ -56,6 +59,9 @@ __all__ = (
     "RepVGGDW",
     "ResNetLayer",
     "SCDown",
+    "SEAttention",
+    "SimAMAttention",
+    "StandardCBAM",
     "TorchVision",
 )
 
@@ -2222,3 +2228,185 @@ class CBAM(nn.Module):
         x_sa = self.spatial_attention(x_ca) 
         
         return x_sa
+
+
+# ============================================================
+# Alternative Attention Modules for Ablation (Major 6)
+# Each is a plug-and-play module with signature __init__(c1, c2)
+# and forward(x) -> x (channel-preserving).
+# ============================================================
+
+class StandardCBAM(nn.Module):
+    """Standard CBAM (Woo et al., 2018) with multiplicative attention.
+
+    Uses channel attention (AvgPool+MaxPool -> shared MLP) followed by
+    spatial attention (MaxPool+AvgPool along channel -> Conv -> sigmoid).
+    Multiplicative application: x = x * ca(x), then x = x * sa(x).
+    """
+
+    def __init__(self, c1, c2):
+        super().__init__()
+        ratio = 16
+        mid = max(c1 // ratio, 1)
+        # Channel attention
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.mlp = nn.Sequential(
+            nn.Conv2d(c1, mid, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid, c1, 1, bias=False),
+        )
+        # Spatial attention
+        self.spatial_conv = nn.Conv2d(2, 1, 7, padding=3, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        # Channel attention (multiplicative)
+        ca = self.sigmoid(self.mlp(self.avg_pool(x)) + self.mlp(self.max_pool(x)))
+        x = x * ca
+        # Spatial attention (multiplicative)
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out = torch.max(x, dim=1, keepdim=True)[0]
+        sa = self.sigmoid(self.spatial_conv(torch.cat([avg_out, max_out], dim=1)))
+        x = x * sa
+        return x
+
+
+class SEAttention(nn.Module):
+    """Squeeze-and-Excitation block (Hu et al., 2018).
+
+    Channel-only attention via global average pooling -> FC -> ReLU -> FC -> Sigmoid.
+    """
+
+    def __init__(self, c1, c2):
+        super().__init__()
+        mid = max(c1 // 16, 1)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Conv2d(c1, mid, 1, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid, c1, 1, bias=False),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        return x * self.fc(self.pool(x))
+
+
+class ECAAttention(nn.Module):
+    """Efficient Channel Attention (Wang et al., 2020).
+
+    Parameter-free channel attention using adaptive 1D convolution.
+    Kernel size is adaptively determined from channel count.
+    """
+
+    def __init__(self, c1, c2, gamma=2, b=1):
+        super().__init__()
+        import math
+        t = int(abs((math.log2(c1) + b) / gamma))
+        k = t if t % 2 else t + 1
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k, padding=k // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        y = self.pool(x)                          # [B, C, 1, 1]
+        y = y.squeeze(-1).transpose(-1, -2)        # [B, 1, C]
+        y = self.conv(y)                            # [B, 1, C]
+        y = y.transpose(-1, -2).unsqueeze(-1)       # [B, C, 1, 1]
+        return x * self.sigmoid(y)
+
+
+class SimAMAttention(nn.Module):
+    """SimAM: Simple, Parameter-Free Attention Module (Yang et al., 2021).
+
+    Computes 3D attention weights analytically based on energy functions
+    without any learnable parameters.
+    """
+
+    def __init__(self, c1, c2, e_lambda=1e-4):
+        super().__init__()
+        self.e_lambda = e_lambda
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        n = w * h - 1
+        # Mean across spatial dimensions
+        x_minus_mu_sq = (x - x.mean(dim=[2, 3], keepdim=True)).pow(2)
+        y = x_minus_mu_sq / (4 * (x_minus_mu_sq.sum(dim=[2, 3], keepdim=True) / n + self.e_lambda)) + 0.5
+        return x * torch.sigmoid(y)
+
+
+class CoordAttention(nn.Module):
+    """Coordinate Attention (Hou et al., 2021).
+
+    Embeds positional information into channel attention by decomposing
+    global pooling into two 1D encodings (horizontal and vertical),
+    preserving spatial structure for precise localization.
+    """
+
+    def __init__(self, c1, c2, reduction=32):
+        super().__init__()
+        mid = max(c1 // reduction, 8)
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
+        self.conv1 = nn.Conv2d(c1, mid, 1, bias=False)
+        self.bn1 = nn.BatchNorm2d(mid)
+        self.act = nn.SiLU(inplace=True)
+        self.conv_h = nn.Conv2d(mid, c1, 1, bias=False)
+        self.conv_w = nn.Conv2d(mid, c1, 1, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        identity = x
+        b, c, h, w = x.size()
+        # Encode horizontal and vertical directions
+        x_h = self.pool_h(x)                           # [B, C, H, 1]
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)      # [B, C, W, 1]
+        # Concat along spatial dim, shared transform
+        y = torch.cat([x_h, x_w], dim=2)               # [B, C, H+W, 1]
+        y = self.act(self.bn1(self.conv1(y)))           # [B, mid, H+W, 1]
+        x_h, x_w = torch.split(y, [h, w], dim=2)       # split back
+        x_w = x_w.permute(0, 1, 3, 2)                  # [B, mid, 1, W]
+        a_h = self.sigmoid(self.conv_h(x_h))            # [B, C, H, 1]
+        a_w = self.sigmoid(self.conv_w(x_w))            # [B, C, 1, W]
+        return identity * a_h * a_w
+
+
+class GAMAttention(nn.Module):
+    """Global Attention Module (Liu et al., 2021).
+
+    Combines channel attention (using MLP with 3D permutation) and
+    spatial attention (using two convolutional layers) to amplify
+    cross-dimension interactions while preserving spatial information.
+    """
+
+    def __init__(self, c1, c2, rate=4):
+        super().__init__()
+        mid = max(c1 // rate, 1)
+        # Channel attention sub-module
+        self.channel_att = nn.Sequential(
+            nn.Linear(c1, mid, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(mid, c1, bias=False),
+        )
+        # Spatial attention sub-module
+        self.spatial_att = nn.Sequential(
+            nn.Conv2d(c1, mid, 7, padding=3, groups=1, bias=False),
+            nn.BatchNorm2d(mid),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(mid, c1, 7, padding=3, groups=1, bias=False),
+            nn.BatchNorm2d(c1),
+        )
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        b, c, h, w = x.size()
+        # Channel attention: permute to [B, H, W, C], apply MLP, permute back
+        x_perm = x.permute(0, 2, 3, 1)                 # [B, H, W, C]
+        x_ca = self.channel_att(x_perm).permute(0, 3, 1, 2)  # [B, C, H, W]
+        x_ca = self.sigmoid(x_ca)
+        x = x * x_ca
+        # Spatial attention
+        x_sa = self.sigmoid(self.spatial_att(x))
+        return x * x_sa

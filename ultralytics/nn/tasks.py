@@ -38,6 +38,12 @@ from ultralytics.nn.modules import (
     C3k2,
     CBAM,
     C3x,
+    CoordAttention,
+    ECAAttention,
+    GAMAttention,
+    SEAttention,
+    SimAMAttention,
+    StandardCBAM,
     CBFuse,
     CBLinear,
     Classify,
@@ -1511,7 +1517,7 @@ def load_checkpoint(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
-from ultralytics.nn.modules.block import CBAM
+from ultralytics.nn.modules.block import CBAM, StandardCBAM, SEAttention, ECAAttention, SimAMAttention, CoordAttention, GAMAttention
 def parse_model(d, ch, verbose=True):
     """Parse a YOLO model.yaml dictionary into a PyTorch model.
 
@@ -1619,7 +1625,7 @@ def parse_model(d, ch, verbose=True):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         
-        if m is CBAM:
+        if m in {CBAM, StandardCBAM, SEAttention, ECAAttention, SimAMAttention, CoordAttention, GAMAttention}:
             c1, c2 = ch[f], ch[f]
             args = [c1, c2, *args]
             
