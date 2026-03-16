@@ -18,6 +18,7 @@ from ultralytics.nn.modules import (
     C2PSA,
     C3,
     C3TR,
+    CBAM,
     ELAN1,
     OBB,
     OBB26,
@@ -36,14 +37,7 @@ from ultralytics.nn.modules import (
     C2fPSA,
     C3Ghost,
     C3k2,
-    CBAM,
     C3x,
-    CoordAttention,
-    ECAAttention,
-    GAMAttention,
-    SEAttention,
-    SimAMAttention,
-    StandardCBAM,
     CBFuse,
     CBLinear,
     Classify,
@@ -51,10 +45,13 @@ from ultralytics.nn.modules import (
     Conv,
     Conv2,
     ConvTranspose,
+    CoordAttention,
     Detect,
     DWConv,
     DWConvTranspose2d,
+    ECAAttention,
     Focus,
+    GAMAttention,
     GhostBottleneck,
     GhostConv,
     HGBlock,
@@ -71,8 +68,11 @@ from ultralytics.nn.modules import (
     ResNetLayer,
     RTDETRDecoder,
     SCDown,
+    SEAttention,
     Segment,
     Segment26,
+    SimAMAttention,
+    StandardCBAM,
     TorchVision,
     WorldDetect,
     YOLOEDetect,
@@ -1517,7 +1517,17 @@ def load_checkpoint(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
-from ultralytics.nn.modules.block import CBAM, StandardCBAM, SEAttention, ECAAttention, SimAMAttention, CoordAttention, GAMAttention
+from ultralytics.nn.modules.block import (
+    CBAM,
+    CoordAttention,
+    ECAAttention,
+    GAMAttention,
+    SEAttention,
+    SimAMAttention,
+    StandardCBAM,
+)
+
+
 def parse_model(d, ch, verbose=True):
     """Parse a YOLO model.yaml dictionary into a PyTorch model.
 
@@ -1624,11 +1634,11 @@ def parse_model(d, ch, verbose=True):
                 with contextlib.suppress(ValueError):
                     args[j] = locals()[a] if a in locals() else ast.literal_eval(a)
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
-        
+
         if m in {CBAM, StandardCBAM, SEAttention, ECAAttention, SimAMAttention, CoordAttention, GAMAttention}:
             c1, c2 = ch[f], ch[f]
             args = [c1, c2, *args]
-            
+
         if m in base_modules:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 != nc (e.g., Classify() output)
@@ -1824,8 +1834,3 @@ def guess_model_task(model):
         "Explicitly define task for your model, i.e. 'task=detect', 'segment', 'classify','pose' or 'obb'."
     )
     return "detect"  # assume detect
-
-
-
-
-

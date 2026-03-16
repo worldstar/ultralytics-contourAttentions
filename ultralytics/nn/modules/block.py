@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
+import cv2  # Required for compute_contours
+import numpy as np  # Required for compute_contours
+
 # +
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import cv2 # Required for compute_contours
-import numpy as np # Required for compute_contours
 # -
-
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
 from .conv import Conv, DWConv, GhostConv, LightConv, RepConv, autopad
@@ -2078,24 +2078,19 @@ class RealNVP(nn.Module):
         return self.prior.log_prob(z) + log_det
 
 
-
-
-
-
-
 # --- Your ChannelAttention Class (with init fix) ---
 class ChannelAttention(nn.Module):
     def __init__(self, in_planes, ratio=16):
-        super(ChannelAttention, self).__init__()
+        super().__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.mlp = nn.Sequential(
             nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False),
             nn.ReLU(inplace=True),
-            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+            nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False),
         )
         self.sigmoid = nn.Sigmoid()
-        
+
         # === INITIALIZATION FIX ===
         # Initialize the last conv layer's weights to zero
         torch.nn.init.constant_(self.mlp[2].weight, 0)
@@ -2104,32 +2099,34 @@ class ChannelAttention(nn.Module):
     def forward(self, x):
         avg_out = self.mlp(self.avg_pool(x))
         max_out = self.mlp(self.max_pool(x))
-        return self.sigmoid(avg_out + max_out) # Initializes to 0.5
+        return self.sigmoid(avg_out + max_out)  # Initializes to 0.5
+
 
 # --- YOUR ORIGINAL SpatialAttention Class (with init fix) ---
 class SpatialAttention(nn.Module):
+    """THIS IS YOUR ORIGINAL MODULE. It uses your CV logic, and we are just adding the stable initialization fix.
     """
-    THIS IS YOUR ORIGINAL MODULE.
-    It uses your CV logic, and we are just adding the
-    stable initialization fix.
-    """
+
     def __init__(self, kernel_sizes=(1, 3, 5)):
-        super(SpatialAttention, self).__init__()
-        
+        super().__init__()
+
         # This is YOUR original branch logic
-        self.branches = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(1, 1, k, padding=k//2, bias=False), # 1 input channel
-                nn.BatchNorm2d(1)
-            ) for k in kernel_sizes
-        ])
-        
+        self.branches = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(1, 1, k, padding=k // 2, bias=False),  # 1 input channel
+                    nn.BatchNorm2d(1),
+                )
+                for k in kernel_sizes
+            ]
+        )
+
         # === STABLE INITIALIZATION FIX ===
         # We will make the branches output a large negative number,
         # so the 'mask' initializes to 0.
         for branch in self.branches:
-            torch.nn.init.constant_(branch[0].weight, 0) # Conv weight = 0
-            torch.nn.init.constant_(branch[1].bias, 0.0) # BN bias = -10
+            torch.nn.init.constant_(branch[0].weight, 0)  # Conv weight = 0
+            torch.nn.init.constant_(branch[1].bias, 0.0)  # BN bias = -10
         # =================================
 
         self.sigmoid = nn.Sigmoid()
@@ -2137,25 +2134,24 @@ class SpatialAttention(nn.Module):
     def forward(self, x):
         # 1. Generate hint mask (YOUR ORIGINAL CV LOGIC)
         # This is 100% correct for your thesis.
-        contour_mask = self.compute_contours(x) 
-        contour_mask = contour_mask.unsqueeze(1) # [B, 1, H, W]
+        contour_mask = self.compute_contours(x)
+        contour_mask = contour_mask.unsqueeze(1)  # [B, 1, H, W]
 
         # 2. Refine the hint (YOUR ORIGINAL LOGIC)
         # At init, this will sum up to ~-30.0
         att = sum(branch(contour_mask) for branch in self.branches)
-        
+
         # At init, this will be sigmoid(-30) = 0
-        mask = self.sigmoid(att) 
+        mask = self.sigmoid(att)
 
         # 3. Apply spatial attention (YOUR ORIGINAL LOGIC)
         # At init, this will be (x * 0) + x = x
-        attended_x = x * mask + x 
+        attended_x = x * mask + x
         return attended_x
 
     def compute_contours(self, x):
-        """
-        A SMARTER, contour-based hint generator using Canny and findContours.
-        This is still 100% traditional CV and respects my thesis goal.
+        """A SMARTER, contour-based hint generator using Canny and findContours. This is still 100% traditional CV and
+        respects my thesis goal.
         """
         # Detach from graph and move to CPU for OpenCV operations
         x_np = x.detach().cpu().numpy()
@@ -2184,7 +2180,7 @@ class SpatialAttention(nn.Module):
             lower = int(max(0, (1.0 - sigma) * v))
             upper = int(min(255, (1.0 + sigma) * v))
             canny_edges = cv2.Canny(blurred, lower, upper)
-            
+
             # Find contours in the edge map
             contours, _ = cv2.findContours(canny_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -2193,40 +2189,40 @@ class SpatialAttention(nn.Module):
             final_mask = np.zeros_like(gray_uint8)
             cv2.drawContours(final_mask, contours, -1, (255), thickness=cv2.FILLED)
             # --- END NEW LOGIC ---
-            
+
             # # ===>>> ADD THESE TWO LINES <<<=== to improve cup mAP50
             # # Apply Morphological Closing to fill small holes/gaps within contours
             # kernel = np.ones((5,5), np.uint8) # 5x5 kernel might be better for closing
             # final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel)
             # # ===>>> END OF ADDITION <<<===
-            
 
             masks_list.append(final_mask)
-        
+
         # Convert back to tensor
         mask_tensor = torch.tensor(np.stack(masks_list), dtype=x.dtype).to(x.device)
-        
+
         return mask_tensor
+
 
 # --- Your CBAM Class (with STABLE forward pass) ---
 class CBAM(nn.Module):
-    def __init__(self, c1, c2, ratio=16): 
-        super(CBAM, self).__init__()
+    def __init__(self, c1, c2, ratio=16):
+        super().__init__()
         self.channel_attention = ChannelAttention(c1, ratio)
         self.spatial_attention = SpatialAttention()
 
     def forward(self, x):
         # === STABLE ADDITIVE FORWARD PASS ===
-        
+
         # 1. Apply Channel Attention as an ADDITIVE residual
         # At init, this will be x + (x * 0.5) = 1.5 * x
         # This is STABLE and will not vanish.
         x_ca = x + (x * self.channel_attention(x))
-        
+
         # 2. Apply Spatial Attention
         # At init, this will be an identity function (output = input)
-        x_sa = self.spatial_attention(x_ca) 
-        
+        x_sa = self.spatial_attention(x_ca)
+
         return x_sa
 
 
@@ -2236,12 +2232,12 @@ class CBAM(nn.Module):
 # and forward(x) -> x (channel-preserving).
 # ============================================================
 
+
 class StandardCBAM(nn.Module):
     """Standard CBAM (Woo et al., 2018) with multiplicative attention.
 
-    Uses channel attention (AvgPool+MaxPool -> shared MLP) followed by
-    spatial attention (MaxPool+AvgPool along channel -> Conv -> sigmoid).
-    Multiplicative application: x = x * ca(x), then x = x * sa(x).
+    Uses channel attention (AvgPool+MaxPool -> shared MLP) followed by spatial attention (MaxPool+AvgPool along channel
+    -> Conv -> sigmoid). Multiplicative application: x = x * ca(x), then x = x * sa(x).
     """
 
     def __init__(self, c1, c2):
@@ -2296,13 +2292,14 @@ class SEAttention(nn.Module):
 class ECAAttention(nn.Module):
     """Efficient Channel Attention (Wang et al., 2020).
 
-    Parameter-free channel attention using adaptive 1D convolution.
-    Kernel size is adaptively determined from channel count.
+    Parameter-free channel attention using adaptive 1D convolution. Kernel size is adaptively determined from channel
+    count.
     """
 
     def __init__(self, c1, c2, gamma=2, b=1):
         super().__init__()
         import math
+
         t = int(abs((math.log2(c1) + b) / gamma))
         k = t if t % 2 else t + 1
         self.pool = nn.AdaptiveAvgPool2d(1)
@@ -2310,18 +2307,17 @@ class ECAAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        y = self.pool(x)                          # [B, C, 1, 1]
-        y = y.squeeze(-1).transpose(-1, -2)        # [B, 1, C]
-        y = self.conv(y)                            # [B, 1, C]
-        y = y.transpose(-1, -2).unsqueeze(-1)       # [B, C, 1, 1]
+        y = self.pool(x)  # [B, C, 1, 1]
+        y = y.squeeze(-1).transpose(-1, -2)  # [B, 1, C]
+        y = self.conv(y)  # [B, 1, C]
+        y = y.transpose(-1, -2).unsqueeze(-1)  # [B, C, 1, 1]
         return x * self.sigmoid(y)
 
 
 class SimAMAttention(nn.Module):
     """SimAM: Simple, Parameter-Free Attention Module (Yang et al., 2021).
 
-    Computes 3D attention weights analytically based on energy functions
-    without any learnable parameters.
+    Computes 3D attention weights analytically based on energy functions without any learnable parameters.
     """
 
     def __init__(self, c1, c2, e_lambda=1e-4):
@@ -2329,7 +2325,7 @@ class SimAMAttention(nn.Module):
         self.e_lambda = e_lambda
 
     def forward(self, x):
-        b, c, h, w = x.size()
+        _b, _c, h, w = x.size()
         n = w * h - 1
         # Mean across spatial dimensions
         x_minus_mu_sq = (x - x.mean(dim=[2, 3], keepdim=True)).pow(2)
@@ -2340,9 +2336,8 @@ class SimAMAttention(nn.Module):
 class CoordAttention(nn.Module):
     """Coordinate Attention (Hou et al., 2021).
 
-    Embeds positional information into channel attention by decomposing
-    global pooling into two 1D encodings (horizontal and vertical),
-    preserving spatial structure for precise localization.
+    Embeds positional information into channel attention by decomposing global pooling into two 1D encodings (horizontal
+    and vertical), preserving spatial structure for precise localization.
     """
 
     def __init__(self, c1, c2, reduction=32):
@@ -2359,26 +2354,25 @@ class CoordAttention(nn.Module):
 
     def forward(self, x):
         identity = x
-        b, c, h, w = x.size()
+        _b, _c, h, w = x.size()
         # Encode horizontal and vertical directions
-        x_h = self.pool_h(x)                           # [B, C, H, 1]
-        x_w = self.pool_w(x).permute(0, 1, 3, 2)      # [B, C, W, 1]
+        x_h = self.pool_h(x)  # [B, C, H, 1]
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)  # [B, C, W, 1]
         # Concat along spatial dim, shared transform
-        y = torch.cat([x_h, x_w], dim=2)               # [B, C, H+W, 1]
-        y = self.act(self.bn1(self.conv1(y)))           # [B, mid, H+W, 1]
-        x_h, x_w = torch.split(y, [h, w], dim=2)       # split back
-        x_w = x_w.permute(0, 1, 3, 2)                  # [B, mid, 1, W]
-        a_h = self.sigmoid(self.conv_h(x_h))            # [B, C, H, 1]
-        a_w = self.sigmoid(self.conv_w(x_w))            # [B, C, 1, W]
+        y = torch.cat([x_h, x_w], dim=2)  # [B, C, H+W, 1]
+        y = self.act(self.bn1(self.conv1(y)))  # [B, mid, H+W, 1]
+        x_h, x_w = torch.split(y, [h, w], dim=2)  # split back
+        x_w = x_w.permute(0, 1, 3, 2)  # [B, mid, 1, W]
+        a_h = self.sigmoid(self.conv_h(x_h))  # [B, C, H, 1]
+        a_w = self.sigmoid(self.conv_w(x_w))  # [B, C, 1, W]
         return identity * a_h * a_w
 
 
 class GAMAttention(nn.Module):
     """Global Attention Module (Liu et al., 2021).
 
-    Combines channel attention (using MLP with 3D permutation) and
-    spatial attention (using two convolutional layers) to amplify
-    cross-dimension interactions while preserving spatial information.
+    Combines channel attention (using MLP with 3D permutation) and spatial attention (using two convolutional layers) to
+    amplify cross-dimension interactions while preserving spatial information.
     """
 
     def __init__(self, c1, c2, rate=4):
@@ -2401,9 +2395,9 @@ class GAMAttention(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        b, c, h, w = x.size()
+        _b, _c, _h, _w = x.size()
         # Channel attention: permute to [B, H, W, C], apply MLP, permute back
-        x_perm = x.permute(0, 2, 3, 1)                 # [B, H, W, C]
+        x_perm = x.permute(0, 2, 3, 1)  # [B, H, W, C]
         x_ca = self.channel_att(x_perm).permute(0, 3, 1, 2)  # [B, C, H, W]
         x_ca = self.sigmoid(x_ca)
         x = x * x_ca
