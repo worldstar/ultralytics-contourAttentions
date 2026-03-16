@@ -8,11 +8,11 @@ Based on the paper: [YOLOv9: Learning What You Want to Learn Using Programmable 
 
 The ContourCBAM replaces the learned spatial attention in standard CBAM with a **non-differentiable contour-based structural hint** refined through learnable convolutional branches. It is composed of three components defined in `ultralytics/nn/modules/block.py`:
 
-| Component | Class Name | Description |
-|-----------|-----------|-------------|
-| Channel Attention | `ChannelAttention` | Dual-pathway (avg-pool + max-pool) squeeze-excitation with shared MLP |
+| Component         | Class Name         | Description                                                                                                              |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Channel Attention | `ChannelAttention` | Dual-pathway (avg-pool + max-pool) squeeze-excitation with shared MLP                                                    |
 | Spatial Attention | `SpatialAttention` | Canny edge detection + `cv2.findContours` on feature maps, refined by parallel multi-scale conv branches (1x1, 3x3, 5x5) |
-| Combined Module | `CBAM` | Applies channel then spatial attention with **additive residual connections** |
+| Combined Module   | `CBAM`             | Applies channel then spatial attention with **additive residual connections**                                            |
 
 ### How the Spatial Attention Works
 
@@ -89,10 +89,10 @@ GlaucomaYOLO_resized/
 
 **Classes (2):**
 
-| ID | Class       |
-|----|-------------|
-| 0  | optic_disc  |
-| 1  | optic_cup   |
+| ID  | Class      |
+| --- | ---------- |
+| 0   | optic_disc |
+| 1   | optic_cup  |
 
 ## Installation
 
@@ -118,8 +118,11 @@ from ultralytics import YOLO
 model = YOLO("ultralytics/cfg/models/v9/yolov9c-contourcbam.yaml")
 model.train(
     data="GlaucomaYOLO_resized/glaucoma.yaml",
-    epochs=100, batch=32, imgsz=640,
-    optimizer="SGD", close_mosaic=15,
+    epochs=100,
+    batch=32,
+    imgsz=640,
+    optimizer="SGD",
+    close_mosaic=15,
 )
 ```
 
@@ -141,11 +144,11 @@ yolo predict model=runs/detect/contourcbam_seed0/weights/best.pt \
 
 Validated over **5 runs** on **1,334 annotated fundus images** with two classes (Optic Disc, Optic Cup):
 
-| Metric | Baseline (YOLOv9) | + ContourCBAM (P3+P4+P5) |
-|--------|-------------------|--------------------------|
-| Optic Cup mAP50 | 0.975 | **0.988** (+1.33%) |
-| Overall mAP50 | — | **0.992** |
-| Cup False Positives | baseline | **reduced by 50%** |
+| Metric              | Baseline (YOLOv9) | + ContourCBAM (P3+P4+P5) |
+| ------------------- | ----------------- | ------------------------ |
+| Optic Cup mAP50     | 0.975             | **0.988** (+1.33%)       |
+| Overall mAP50       | —                 | **0.992**                |
+| Cup False Positives | baseline          | **reduced by 50%**       |
 
 **Ablation**: Multi-scale placement (P3+P4+P5) was confirmed optimal compared to single-scale variants.
 
@@ -159,16 +162,16 @@ This section describes how to run the full set of 40 experiments (8 attention co
 
 ### Experiment Configurations
 
-| Config | Model YAML | Attention Module | Params |
-|--------|-----------|------------------|--------|
-| baseline | `yolov9c.yaml` | None | 25,590,912 |
-| contourcbam | `yolov9c-contourcbam.yaml` | ContourCBAM (proposed) | 25,664,763 |
-| stdcbam | `yolov9c-stdcbam.yaml` | Standard CBAM (Woo et al. 2018) | 25,664,934 |
-| se | `yolov9c-se.yaml` | SE (Hu et al. 2018) | 25,664,640 |
-| eca | `yolov9c-eca.yaml` | ECA (Wang et al. 2020) | 25,590,927 |
-| simam | `yolov9c-simam.yaml` | SimAM (Yang et al. 2021) | 25,590,912 |
-| coordatt | `yolov9c-coordatt.yaml` | Coordinate Attention (Hou et al. 2021) | 25,646,288 |
-| gam | `yolov9c-gam.yaml` | GAM (Liu et al. 2021) | 40,339,712 |
+| Config      | Model YAML                 | Attention Module                       | Params     |
+| ----------- | -------------------------- | -------------------------------------- | ---------- |
+| baseline    | `yolov9c.yaml`             | None                                   | 25,590,912 |
+| contourcbam | `yolov9c-contourcbam.yaml` | ContourCBAM (proposed)                 | 25,664,763 |
+| stdcbam     | `yolov9c-stdcbam.yaml`     | Standard CBAM (Woo et al. 2018)        | 25,664,934 |
+| se          | `yolov9c-se.yaml`          | SE (Hu et al. 2018)                    | 25,664,640 |
+| eca         | `yolov9c-eca.yaml`         | ECA (Wang et al. 2020)                 | 25,590,927 |
+| simam       | `yolov9c-simam.yaml`       | SimAM (Yang et al. 2021)               | 25,590,912 |
+| coordatt    | `yolov9c-coordatt.yaml`    | Coordinate Attention (Hou et al. 2021) | 25,646,288 |
+| gam         | `yolov9c-gam.yaml`         | GAM (Liu et al. 2021)                  | 40,339,712 |
 
 Each config is trained with 5 seeds (0-4), totaling **40 experiments**.
 
@@ -178,16 +181,16 @@ Training hyperparameters: `batch=32, epochs=100, optimizer=SGD, close_mosaic=15,
 
 The `nchc_experiments.slurm` file uses `--array=0-39` where each task ID maps to:
 
-| Task IDs | Config | Seeds |
-|----------|--------|-------|
-| 0-4 | baseline | 0-4 |
-| 5-9 | contourcbam | 0-4 |
-| 10-14 | stdcbam | 0-4 |
-| 15-19 | se | 0-4 |
-| 20-24 | eca | 0-4 |
-| 25-29 | simam | 0-4 |
-| 30-34 | coordatt | 0-4 |
-| 35-39 | gam | 0-4 |
+| Task IDs | Config      | Seeds |
+| -------- | ----------- | ----- |
+| 0-4      | baseline    | 0-4   |
+| 5-9      | contourcbam | 0-4   |
+| 10-14    | stdcbam     | 0-4   |
+| 15-19    | se          | 0-4   |
+| 20-24    | eca         | 0-4   |
+| 25-29    | simam       | 0-4   |
+| 30-34    | coordatt    | 0-4   |
+| 35-39    | gam         | 0-4   |
 
 ### Deployment Steps
 
@@ -196,30 +199,40 @@ The `nchc_experiments.slurm` file uses `--array=0-39` where each task ID maps to
 2. **Edit the Slurm account**: Open `nchc_experiments.slurm` and replace `MSTXXXXX` on line 7 with your actual NCHC account code.
 
 3. **Run the setup check**:
+
    ```bash
    cd $HOME/ultralytics-contourAttentions
    bash nchc_setup.sh
    ```
+
    This verifies the dataset, all 8 YAML configs, and the Singularity container are in place.
 
 4. **Submit all 40 experiments**:
+
    ```bash
    sbatch nchc_experiments.slurm
    ```
+
    To submit only a subset (e.g., baseline seeds 0-4):
+
    ```bash
    sbatch --array=0-4 nchc_experiments.slurm
    ```
+
    To rerun a single failed job (e.g., task ID 17):
+
    ```bash
    sbatch --array=17 nchc_experiments.slurm
    ```
 
 5. **Monitor job status**:
+
    ```bash
    squeue -u $USER
    ```
+
    Check a specific job's output:
+
    ```bash
    cat logs/exp_<JOB_ID>_<TASK_ID>.out
    ```
@@ -232,17 +245,17 @@ The `nchc_experiments.slurm` file uses `--array=0-39` where each task ID maps to
 
 ## Key Files
 
-| File | Purpose |
-|------|---------|
-| `ultralytics/nn/modules/block.py` | ContourCBAM module classes (`ChannelAttention`, `SpatialAttention`, `CBAM`) and all alternative attention modules |
-| `ultralytics/nn/tasks.py` | `parse_model()` with attention module registration |
-| `ultralytics/cfg/models/v9/yolov9c-contourcbam.yaml` | YOLOv9-C architecture config with ContourCBAM at P3/P4/P5 |
-| `ultralytics/cfg/models/v9/yolov9c.yaml` | Baseline YOLOv9-C without attention |
-| `GlaucomaYOLO_resized/glaucoma.yaml` | Dataset configuration (2 classes, 1334 images) |
-| `nchc_experiments.slurm` | Slurm job array script (40 jobs, H100 GPU, Singularity container) |
-| `nchc_setup.sh` | Pre-flight setup check (dataset, configs, container) |
-| `nchc_collect_results.py` | Post-experiment result aggregation and statistical summary |
-| `run_all_experiments.py` | Alternative local experiment runner with auto-resume |
+| File                                                 | Purpose                                                                                                           |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `ultralytics/nn/modules/block.py`                    | ContourCBAM module classes (`ChannelAttention`, `SpatialAttention`, `CBAM`) and all alternative attention modules |
+| `ultralytics/nn/tasks.py`                            | `parse_model()` with attention module registration                                                                |
+| `ultralytics/cfg/models/v9/yolov9c-contourcbam.yaml` | YOLOv9-C architecture config with ContourCBAM at P3/P4/P5                                                         |
+| `ultralytics/cfg/models/v9/yolov9c.yaml`             | Baseline YOLOv9-C without attention                                                                               |
+| `GlaucomaYOLO_resized/glaucoma.yaml`                 | Dataset configuration (2 classes, 1334 images)                                                                    |
+| `nchc_experiments.slurm`                             | Slurm job array script (40 jobs, H100 GPU, Singularity container)                                                 |
+| `nchc_setup.sh`                                      | Pre-flight setup check (dataset, configs, container)                                                              |
+| `nchc_collect_results.py`                            | Post-experiment result aggregation and statistical summary                                                        |
+| `run_all_experiments.py`                             | Alternative local experiment runner with auto-resume                                                              |
 
 ## Citation
 
@@ -263,7 +276,7 @@ This work builds on YOLOv9:
 }
 ```
 
-## Acknowledgements
+## Acknowledgments
 
 - [YOLOv9 — WongKinYiu](https://github.com/WongKinYiu/yolov9)
 - [Ultralytics](https://github.com/ultralytics/ultralytics)

@@ -3,38 +3,38 @@
 nc: 80
 
 backbone:
-  - [-1, 1, Conv, [64, 3, 2]]              # 0-P1/2
-  - [-1, 1, Conv, [128, 3, 2]]             # 1-P2/4
-  - [-1, 1, RepNCSPELAN4, [256, 128, 64, 1]]  # 2
-  - [-1, 1, ADown, [256]]                  # 3-P3/8
+  - [-1, 1, Conv, [64, 3, 2]] # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]] # 1-P2/4
+  - [-1, 1, RepNCSPELAN4, [256, 128, 64, 1]] # 2
+  - [-1, 1, ADown, [256]] # 3-P3/8
   - [-1, 1, RepNCSPELAN4, [512, 256, 128, 1]] # 4
-  - [-1, 1, ADown, [512]]                  # 5-P4/16
+  - [-1, 1, ADown, [512]] # 5-P4/16
   - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]] # 6
-  - [-1, 1, ADown, [512]]                  # 7-P5/32
+  - [-1, 1, ADown, [512]] # 7-P5/32
   - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]] # 8
-  - [-1, 1, SPPELAN, [512, 256]]           # 9
+  - [-1, 1, SPPELAN, [512, 256]] # 9
 
 head:
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 10
-  - [[-1, 6], 1, Concat, [1]]                    # 11 cat backbone P4
-  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]]    # 12
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 10
+  - [[-1, 6], 1, Concat, [1]] # 11 cat backbone P4
+  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]] # 12
 
-  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]   # 13
-  - [[-1, 4], 1, Concat, [1]]                     # 14 cat backbone P3
-  - [-1, 1, RepNCSPELAN4, [256, 256, 128, 1]]     # 15 (P3/8-small)
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]] # 13
+  - [[-1, 4], 1, Concat, [1]] # 14 cat backbone P3
+  - [-1, 1, RepNCSPELAN4, [256, 256, 128, 1]] # 15 (P3/8-small)
 
-  - [-1, 1, ECAAttention, []]                     # 16 ECA at P3
+  - [-1, 1, ECAAttention, []] # 16 ECA at P3
 
-  - [-1, 1, ADown, [256]]                         # 17
-  - [[-1, 12], 1, Concat, [1]]                    # 18 cat head P4
-  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]]     # 19 (P4/16-medium)
+  - [-1, 1, ADown, [256]] # 17
+  - [[-1, 12], 1, Concat, [1]] # 18 cat head P4
+  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]] # 19 (P4/16-medium)
 
-  - [-1, 1, ECAAttention, []]                     # 20 ECA at P4
+  - [-1, 1, ECAAttention, []] # 20 ECA at P4
 
-  - [-1, 1, ADown, [512]]                         # 21
-  - [[-1, 9], 1, Concat, [1]]                     # 22 cat head P5
-  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]]     # 23 (P5/32-large)
+  - [-1, 1, ADown, [512]] # 21
+  - [[-1, 9], 1, Concat, [1]] # 22 cat head P5
+  - [-1, 1, RepNCSPELAN4, [512, 512, 256, 1]] # 23 (P5/32-large)
 
-  - [-1, 1, ECAAttention, []]                     # 24 ECA at P5
+  - [-1, 1, ECAAttention, []] # 24 ECA at P5
 
-  - [[16, 20, 24], 1, Detect, [nc]]               # 25 Detect(P3, P4, P5)
+  - [[16, 20, 24], 1, Detect, [nc]] # 25 Detect(P3, P4, P5)

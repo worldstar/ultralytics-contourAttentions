@@ -7,20 +7,19 @@ Usage (on NCHC after all jobs complete):
 
 import csv
 import json
-import os
 from pathlib import Path
 
 import numpy as np
 
 EXPERIMENTS = {
-    "baseline":      "ultralytics/cfg/models/v9/yolov9c.yaml",
-    "contourcbam":   "ultralytics/cfg/models/v9/yolov9c-contourcbam.yaml",
-    "stdcbam":       "ultralytics/cfg/models/v9/yolov9c-stdcbam.yaml",
-    "se":            "ultralytics/cfg/models/v9/yolov9c-se.yaml",
-    "eca":           "ultralytics/cfg/models/v9/yolov9c-eca.yaml",
-    "simam":         "ultralytics/cfg/models/v9/yolov9c-simam.yaml",
-    "coordatt":      "ultralytics/cfg/models/v9/yolov9c-coordatt.yaml",
-    "gam":           "ultralytics/cfg/models/v9/yolov9c-gam.yaml",
+    "baseline": "ultralytics/cfg/models/v9/yolov9c.yaml",
+    "contourcbam": "ultralytics/cfg/models/v9/yolov9c-contourcbam.yaml",
+    "stdcbam": "ultralytics/cfg/models/v9/yolov9c-stdcbam.yaml",
+    "se": "ultralytics/cfg/models/v9/yolov9c-se.yaml",
+    "eca": "ultralytics/cfg/models/v9/yolov9c-eca.yaml",
+    "simam": "ultralytics/cfg/models/v9/yolov9c-simam.yaml",
+    "coordatt": "ultralytics/cfg/models/v9/yolov9c-coordatt.yaml",
+    "gam": "ultralytics/cfg/models/v9/yolov9c-gam.yaml",
 }
 SEEDS = [0, 1, 2, 3, 4]
 
@@ -33,7 +32,7 @@ def parse_test_log(log_dir):
         return {}
 
     rows = []
-    with open(results_csv, "r") as f:
+    with open(results_csv) as f:
         reader = csv.DictReader(f)
         for row in reader:
             rows.append({k.strip(): v.strip() for k, v in row.items()})
@@ -70,7 +69,7 @@ def collect_all():
             train_metrics = {}
             if train_csv.exists():
                 rows = []
-                with open(train_csv, "r") as f:
+                with open(train_csv) as f:
                     reader = csv.DictReader(f)
                     for row in reader:
                         rows.append({k.strip(): v.strip() for k, v in row.items()})
@@ -110,9 +109,7 @@ def generate_summary(all_results):
     summary = {}
 
     for exp_name in EXPERIMENTS:
-        runs = [all_results[f"{exp_name}_seed{s}"]
-                for s in SEEDS
-                if f"{exp_name}_seed{s}" in all_results]
+        runs = [all_results[f"{exp_name}_seed{s}"] for s in SEEDS if f"{exp_name}_seed{s}" in all_results]
         if not runs:
             continue
 
@@ -123,9 +120,11 @@ def generate_summary(all_results):
 
         exp_summary = {}
         for key in sorted(metrics_keys):
-            values = [r["test_metrics"][key] for r in runs
-                      if key in r.get("test_metrics", {})
-                      and isinstance(r["test_metrics"][key], (int, float))]
+            values = [
+                r["test_metrics"][key]
+                for r in runs
+                if key in r.get("test_metrics", {}) and isinstance(r["test_metrics"][key], (int, float))
+            ]
             if values:
                 exp_summary[key] = {
                     "mean": float(np.mean(values)),
